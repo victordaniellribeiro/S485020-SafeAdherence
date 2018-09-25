@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>S485020-SafeAdherence</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",_initDate:void 0,_endDate:void 0,_iterationMap:void 0,items:[{xtype:"container",itemId:"header",cls:"header"},{xtype:"container",itemId:"bodyContainer",layout:{type:"vbox"},height:"90%",width:"100%",autoScroll:!0}],launch:function(){var t=this.getContext().getProject().ObjectID;this.myMask=new Ext.LoadMask({msg:"Please wait...",target:this});var e=Ext.create("Rally.ui.Button",{text:"Search",margin:"10 10 10 100",scope:this,handler:function(){this._doSearch(t,this._initDate,this._endDate)}});this.down("#header").add([{xtype:"panel",autoWidth:!0,height:180,layout:"hbox",items:[{xtype:"panel",title:"Choose date range:",flex:3,align:"stretch",autoHeight:!0,bodyPadding:10,items:[{xtype:"datefield",anchor:"100%",fieldLabel:"From",scope:this,listeners:{change:function(t,e,a){this._initDate=e.toISOString()},scope:this}},{xtype:"datefield",anchor:"100%",fieldLabel:"To",scope:this,listeners:{change:function(t,e,a){this._endDate=e},scope:this}},e]}]}])},_doSearch:function(t,e,a){this.myMask.show(),this._getIterations(t,e,a)},_getIterations:function(t,e,a){Ext.create("Rally.data.wsapi.Store",{model:"Iteration",autoLoad:!0,fetch:["Description","Name","ObjectID","PlannedVelocity","StartDate","EndDate","Project"],limit:1/0,context:{projectScopeUp:!1,projectScopeDown:!0,project:null},filters:Rally.data.QueryFilter.and([Rally.data.QueryFilter.or([{property:"Project.parent.ObjectID",value:t},{property:"Project.parent.parent.ObjectID",value:t}]),Rally.data.QueryFilter.and([{property:"StartDate",operator:">=",value:e},{property:"EndDate",operator:"<=",value:a}])]),listeners:{load:function(t,e,a){var o=[];this._iterationMap=new Ext.util.MixedCollection,_.each(e,function(t){this._iterationMap.add(t.get("ObjectID"),t),o.push(this._getStoriesByIteration(t))},this);var r=this;Deft.Promise.all(o).then({success:function(t){var e=[];_.each(t,function(t){t.length>0&&e.push(r._calculateVelocity(t))},r),r._createGrid(e)}},this)},scope:this}})},_getStoriesByIteration:function(t){var e=Ext.create("Deft.Deferred"),a=t.get("ObjectID"),o=[{property:"__At",value:t.get("EndDate")},{property:"_TypeHierarchy",operator:"in",value:["Defect","HierarchicalRequirement"]},{property:"_ProjectHierarchy",value:t.get("Project").ObjectID},{property:"Iteration",value:a}];Ext.create("Rally.data.lookback.SnapshotStore",{fetch:["Name","FormattedID","PlanEstimate","ScheduleState","State","Project","Iteration","_ValidFrom","_ValidTo"],filters:o,autoLoad:!0,sorters:[{property:"ObjectID",direction:"ASC"}],limit:1/0,hydrate:["State","Iteration","ScheduleState","Project"],listeners:{load:function(t,a,o){e.resolve(a)},scope:this}});return e.promise},_calculateVelocity:function(t){var e={};if(t&&t.length>0){var a=0;_.each(t,function(t){"Accepted"!=t.get("ScheduleState")&&"Ready to Ship"!=t.get("ScheduleState")||(a+=t.get("PlanEstimate"))},this);var o,r=t[0].get("Iteration").Name,i=t[0].get("Iteration").ObjectID,n=this._iterationMap.get(i).get("PlannedVelocity");o=n?Math.round(a/n*100)+"%":"PlannedVelocity empty";var c=this._calculateScore(a,n);e={iteration:r,iterationId:i,project:t[0].get("Project").Name,actualVelocity:a,plannedVelocity:n,percentDone:o,score:c}}return e},_calculateScore:function(t,e){if(!e)return 0;var a=Math.round(t/e*100);return a>=100?5:a>=90?4:a>=80?3:a>=70?2:0},_createGrid:function(t){this.down("#bodyContainer").removeAll(!0);var e=Ext.create("Rally.data.custom.Store",{data:t,pageSize:1e3}),a=Ext.create("Rally.ui.Button",{text:"Export",margin:"10 10 10 10",scope:this,handler:function(){var e=this._convertToCSV(t);console.log("converting to csv:",e);var a=document.createElement("a"),o=new Blob(["\ufeff",e]),r=URL.createObjectURL(o);a.href=r,a.download="report.csv",document.body.appendChild(a),a.click(),document.body.removeChild(a)}}),o=Ext.create("Rally.ui.grid.Grid",{width:880,viewConfig:{stripeRows:!0,enableTextSelection:!0},showRowActionsColumn:!1,showPagingToolbar:!1,enableEditing:!1,itemId:"iterationScoreGrid",store:e,columnCfgs:[{text:"Iteration",dataIndex:"iteration",flex:2},{text:"Project",dataIndex:"project",flex:3},{text:"percentDone",dataIndex:"percentDone",flex:1},{text:"score",dataIndex:"score",flex:1}]}),r=Ext.create("Ext.panel.Panel",{title:"Iteration Adherence Score",autoScroll:!0,layout:{type:"vbox",align:"stretch",padding:5},padding:5,items:[o]});this.down("#bodyContainer").add(a),this.down("#bodyContainer").add(r),this.myMask.hide()},_convertToCSV:function(t){var e=Object.keys(t[0]),a=function(t,e){return null===e?"":e},o=t.map(function(t){return e.map(function(e){return JSON.stringify(t[e],a)}).join(",")});return o.unshift(e.join(",")),o.join("\r\n")}});
+
+            Rally.launchApp('CustomApp', {
+                name:"S485020-SafeAdherence",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>
