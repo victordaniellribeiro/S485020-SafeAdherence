@@ -15,6 +15,7 @@
     _initDate: undefined,
     _endDate: undefined,
     _iterationMap: undefined,
+    _iterationAcceptedMap: undefined,
 
     items:[
         {
@@ -153,22 +154,42 @@
                     //console.log('Data:', data);
 
                     var promises = [];
+                    var promisesAcceptedOnDate = [];
 
                     this._iterationMap = new Ext.util.MixedCollection();
+                    this._iterationAcceptedMap = new Ext.util.MixedCollection();
 
                     _.each(data, function(record) {
-                    	//console.log('iteration: ', record);
-                    	this._iterationMap.add(record.get('ObjectID'), record);
+                        //console.log('iteration: ', record);
+                        this._iterationMap.add(record.get('ObjectID'), record);
 
-                    	promises.push(this._getStoriesByIteration(record));
-			        }, this);
+                        promises.push(this._getStoriesByIteration(record));
+                        promisesAcceptedOnDate.push(this._getStoriesAcceptedOnDate(record));
+                    }, this);
 
 
-                    var that = this;
+                    Deft.Promise.all(promisesAcceptedOnDate).then({
+                        success: function(records) {
+                            //create a map of iterationId/AcceptedOnDateScore
+                            _.each(records, function(stories) {
+                                if (stories.length > 0) {
+                                    var iterationId = stories[0].get('Iteration').ObjectID;
+                                    var iterationEndDate = this._iterationMap.get(iterationId).get('EndDate');
+
+                                    this._iterationAcceptedMap.add(iterationId, this._calculateAcceptedScore(stories, iterationEndDate));
+                                }
+
+                            }, this);
+
+                            console.log('Accepted map:', this._iterationAcceptedMap);
+
+                        },
+                        scope: this
+                    });
+
 
 			        Deft.Promise.all(promises).then({
 			        	success: function(records) {
-
 			        		//foreach iteration calculate velocity
 			        		var rows = [];
 
@@ -176,17 +197,17 @@
 		                    	//console.log('stories: ', record);
 
 		                    	if (record.length > 0) {
-		                    		rows.push(that._calculateVelocity(record));
+		                    		rows.push(this._calculateVelocity(record));
 		                    	}
 
-					        }, that);
+					        }, this);
 
 					        //console.log('rows:', rows);
 
-					        that._createGrid(rows);
-			        	}
-			        }, this);
-
+					        this._createGrid(rows);
+			        	},
+                        scope: this
+			        });
 
                 },
                 scope: this
@@ -266,6 +287,40 @@
         return deferred.promise;
     },
 
+
+    _getStoriesAcceptedOnDate: function(iteration) {
+        var iterationId = iteration.get('ObjectID');
+        // console.log('looking for stories at iteration:', iterationId);
+
+        var parentNames = new Ext.util.MixedCollection();
+        var deferred = Ext.create('Deft.Deferred');
+
+        Ext.create('Rally.data.wsapi.Store', {
+            model: 'HierarchicalRequirement',
+            autoLoad: true,
+            fetch: ['Name', 'ObjectID', 'FormattedID', 'AcceptedDate', 'Iteration'],
+            context: {
+                projectScopeUp: false,
+                projectScopeDown: true,
+                project: null //null to search all workspace
+            },
+            filters: [{
+                property: 'Iteration.ObjectID',
+                value: iterationId
+            }],
+            limit: Infinity,
+            listeners: {
+                load: function(store, data, success) {
+                    // console.log('Stories for accedpted:', data);
+                    deferred.resolve(data);
+                }
+            }, scope: this
+        });
+
+        return deferred.promise;
+    },
+
+
     _calculateVelocity: function(stories) {
     	var row = {};
 
@@ -287,7 +342,9 @@
 	    	} else {
 	    		percentDone = 'PlannedVelocity empty';
 	    	}
+
 	    	var score = this._calculateScore(actualVelocity, plannedVelocity);
+            var acceptedScore = this._iterationAcceptedMap.get(iterationId);
 
 	    	row = {
 	    		iteration : iterationName,
@@ -296,7 +353,8 @@
 		        actualVelocity : actualVelocity,
 		        plannedVelocity : plannedVelocity,
 		        percentDone : percentDone,
-		        score : score
+		        score : score,
+                acceptedScore: acceptedScore
 	    	};       
 	    }
 
@@ -322,6 +380,49 @@
     	} else {
     		return 0;
     	}
+    },
+
+
+    _calculateAcceptedScore: function(stories, iterationEndDate) {
+        var score = 0;
+
+        var acceptedWithinRange = 0;
+        _.each(stories, function(story) {
+            //console.log('stories: ', record);
+
+            if (this._isAcceptedWithinRange(story, iterationEndDate)) {
+                acceptedWithinRange += 1;
+            }
+
+        }, this);
+
+        if (acceptedWithinRange > (stories.length / 2)) {
+            score = 5;
+        } else {
+            score = 0;
+        }
+
+        return score;
+    },
+
+
+    _isAcceptedWithinRange: function(story, endDate) {
+        // console.log('Iteration endDate:', endDate);
+
+        var acceptedLimit = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - 2);
+
+        // console.log('startLimit', startLimit);
+
+        var acceptedDate = story.get('AcceptedDate');
+        //console.log('acceptedDate:', acceptedDate);
+
+        if (acceptedDate > acceptedLimit) {
+            //console.log('acceptedDate out');
+            return false;
+        } else {
+            // console.log('acceptedDate in');
+            return true;
+        }
     },
 
 
@@ -379,13 +480,18 @@
                     flex: 3
                 },
                 {
-                    text: 'percentDone',
+                    text: 'Percent Done',
                     dataIndex: 'percentDone',
                     flex: 1
                 },
                 {
-                    text: 'score', 
+                    text: 'Velocity Score', 
                     dataIndex: 'score',
+                    flex: 1
+                },
+                {
+                    text: 'PO Engaged', 
+                    dataIndex: 'acceptedScore',
                     flex: 1
                 }
             ]
